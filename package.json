@@ -1,0 +1,30 @@
+{
+	"name": "llm-test",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"format": "biome format ./",
+		"format:fix": "biome format --write ./",
+		"lint": "biome lint ./",
+		"lint:fix": "biome lint --write ./",
+		"check": "biome check ./",
+		"check:fix": "biome check --write ./"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.2.6",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@ai-sdk/anthropic": "^2.0.33",
+		"@anthropic-ai/sdk": "^0.67.0",
+		"@chainsafe/libp2p-gossipsub": "^14.1.2",
+		"ai": "^5.0.76",
+		"helia": "5.5.1",
+		"libp2p": "2.9.0",
+		"zod": "^4.1.12"
+	}
+}
