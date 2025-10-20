@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { Companion } from "./src/libp2p/index.ts";
+import { Companion } from "./src/index.ts";
 
 config();
 
@@ -18,14 +18,17 @@ await companion.initialize();
 companion.onMessage("message", async (message) => {
 	const decoded = new TextDecoder().decode(message.data);
 	const json = JSON.parse(decoded);
-	if (json.from !== companion.metadata.id) {
-		console.log(`[${companion.metadata.id}] Received message:`, json);
-	}
+	console.log(`[${companion.metadata.id}] Received message:`, json);
 	await companion.input(decoded);
 });
 
-companion.event.addListener("speakState", () => {
-	if (companion.state.speakState === true && companion.state.message !== "") {
+const checkAndSpeak = async () => {
+	if (
+		companion.state.listeningTo === null &&
+		companion.state.wantToRespond &&
+		companion.state.message !== ""
+	) {
+		await new Promise<void>((resolve) => setTimeout(() => resolve(), 5000));
 		companion.sendMessage(
 			"message",
 			JSON.stringify({
@@ -34,4 +37,6 @@ companion.event.addListener("speakState", () => {
 			}),
 		);
 	}
-});
+};
+
+companion.event.addListener("listeningTo", checkAndSpeak);

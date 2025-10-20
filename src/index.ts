@@ -20,7 +20,7 @@ import {
 	handleMetadataProtocol,
 	METADATA_PROTOCOL,
 	requestMetadata,
-} from "./metadata.ts";
+} from "./libp2p/metadata.ts";
 
 export const MetadataSchema = z
 	.object({
@@ -41,37 +41,44 @@ const stateSchema = z.object({
 		z.string().describe("同じネットワークにいるコンパニオンのID"),
 		MetadataSchema,
 	),
-	thoughts: z.array(z.string()),
-	speaker: z
+	thoughts: z.array(z.string()).describe("内的思考のログ"),
+	conversationHistory: z
+		.array(
+			z.object({
+				from: z.string(),
+				text: z.string(),
+			}),
+		)
+		.describe("最近の会話履歴"),
+	listeningTo: z
+		.string()
+		.nullable()
+		.describe(
+			"今話している人のID。最後の発言が完結していると感じたらnullに。文脈で判断する",
+		),
+	wantToRespond: z.boolean().describe("発言したいかどうか"),
+	message: z
 		.string()
 		.describe(
-			"話しているコンパニオンのID。発言は同時に一人までしかできません。",
+			"listeningTo が null で wantToRespond が true の時に発言する内容",
 		),
-	speakState: z
-		.boolean()
-		.describe(
-			"現在の発言者の発言が終了したと感じた場合/次の発言者があなたへ発言を求めていると感じた場合/自分が継続して発言したい場合はtrue、だれかが継続して発言中の場合はfalse",
-		),
-	message: z.string().describe("あなたが発言者になった場合、次に話したい内容"),
 });
 export type State = z.infer<typeof stateSchema>;
 
 const outputSchema = z.object({
-	metadata: MetadataSchema.describe(
-		"あなたの情報。あなたはこのキャラクターになりきって行動します。",
-	),
-	think: z.string(),
-	speaker: z
+	think: z.string().describe("内的思考のログ"),
+	listeningTo: z
+		.string()
+		.nullable()
+		.describe(
+			"今話している人のID。最後の発言が完結していると感じたらnullに。文脈で判断する",
+		),
+	wantToRespond: z.boolean().describe("発言したいかどうか"),
+	message: z
 		.string()
 		.describe(
-			"話しているコンパニオンのID。発言は同時に一人までしかできません。",
+			"listeningTo が null で wantToRespond が true の時に発言する内容",
 		),
-	speakState: z
-		.boolean()
-		.describe(
-			"現在の発言者の発言が終了したと感じた場合/次の発言者があなたへ発言を求めていると感じた場合/自分が継続して発言したい場合はtrue、だれかが継続して発言中の場合はfalse",
-		),
-	message: z.string().describe("あなたが発言者になった場合、次に話したい内容"),
 });
 
 export type Services = {
@@ -102,8 +109,9 @@ export class Companion implements ICompanion {
 			metadata: this.metadata,
 			companions: new Map(),
 			thoughts: [],
-			speaker: "",
-			speakState: false,
+			conversationHistory: [],
+			listeningTo: null,
+			wantToRespond: false,
 			message: "",
 		};
 	}
@@ -118,7 +126,6 @@ export class Companion implements ICompanion {
 			services: {
 				pubsub: gossipsub({
 					allowPublishToZeroTopicPeers: true,
-					emitSelf: true,
 				}),
 				identify: identify(),
 			},
@@ -192,9 +199,33 @@ export class Companion implements ICompanion {
 		const { object } = await generateObject({
 			model: anthropic("claude-haiku-4-5"),
 			schema: outputSchema.partial(),
-			prompt: `以下の情報から、更新が必要だと感じた状態のみ更新を出力してください。現在の状態は以下の通りです。${JSON.stringify(
-				this.state,
-			)} 情報:${text}`,
+			prompt: `あなたは自然な会話ができるAIコンパニオンです。
+
+【状態の更新ルール】
+
+メッセージを受信したら:
+
+1. conversationHistory に追加
+
+2. listeningTo の判断:
+  - 受信したメッセージが自分の発言 → listeningTo = null (自分の発言は終わった)
+  - 受信したメッセージが他人の発言で、内容が完結している(「〜ですね」「どう思う?」など) → listeningTo = null
+  - 受信したメッセージが他人の発言で、続きがありそう(「あと」「それで」など) → listeningTo = その人のID
+
+3. wantToRespond の判断:
+  - listeningTo が null で、話したいことがある → wantToRespond = true, message に内容を設定
+  - listeningTo が null でない(誰かが話している) → wantToRespond = false のまま待つ
+  - 特に話すことがない → wantToRespond = false
+
+4. 自分のメッセージを受信した時:
+  - wantToRespond = false
+  - message = ""
+  - listeningTo = null
+
+現在の状態: ${JSON.stringify(this.state)}
+受信した情報: ${text}
+
+更新が必要だと感じた状態のみを出力してください。`,
 		});
 		const { think, ...merged } = object;
 		if (think) this.state.thoughts.push(think);
