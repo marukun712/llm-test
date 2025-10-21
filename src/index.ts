@@ -34,13 +34,6 @@ export const MetadataSchema = z
 export type Metadata = z.infer<typeof MetadataSchema>;
 
 const stateSchema = z.object({
-	metadata: MetadataSchema.describe(
-		"あなたの情報。あなたはこのキャラクターになりきって行動します。",
-	),
-	companions: z.map(
-		z.string().describe("同じネットワークにいるコンパニオンのID"),
-		MetadataSchema,
-	),
 	thoughts: z.array(z.string()).describe("内的思考のログ"),
 	conversationHistory: z
 		.array(
@@ -50,34 +43,24 @@ const stateSchema = z.object({
 			}),
 		)
 		.describe("最近の会話履歴"),
-	listeningTo: z
+	speakers: z.array(z.string()).describe("現在話しているコンパニオンのID配列"),
+	message: z
 		.string()
 		.nullable()
 		.describe(
-			"今話している人のID。最後の発言が完結していると感じたらnullに。文脈で判断する",
-		),
-	wantToRespond: z.boolean().describe("発言したいかどうか"),
-	message: z
-		.string()
-		.describe(
-			"listeningTo が null で wantToRespond が true の時に発言する内容",
+			"話者が誰もいない場合、発言したい内容。speakersに値が入っている場合はnullを入れる。",
 		),
 });
 export type State = z.infer<typeof stateSchema>;
 
 const outputSchema = z.object({
 	think: z.string().describe("内的思考のログ"),
-	listeningTo: z
+	speakers: z.array(z.string()).describe("現在話しているコンパニオンのID配列"),
+	message: z
 		.string()
 		.nullable()
 		.describe(
-			"今話している人のID。最後の発言が完結していると感じたらnullに。文脈で判断する",
-		),
-	wantToRespond: z.boolean().describe("発言したいかどうか"),
-	message: z
-		.string()
-		.describe(
-			"listeningTo が null で wantToRespond が true の時に発言する内容",
+			"話者が誰もいない場合、発言したい内容。speakersに値が入っている場合はnullを入れる。",
 		),
 });
 
@@ -91,6 +74,7 @@ export interface ICompanion {
 	metadata: Metadata;
 	event: EventEmitter;
 	state: State;
+	companions: Map<string, Metadata>;
 	input: (text: string) => Promise<void>;
 	onMessage: (topic: string, handler: (evt: Message) => void) => void;
 	initialize: (metadata: Metadata) => Promise<void>;
@@ -101,19 +85,18 @@ export class Companion implements ICompanion {
 	metadata!: Metadata;
 	event: EventEmitter;
 	state: State;
+	companions: Map<string, Metadata>;
 
 	constructor(metadata: Metadata) {
 		this.metadata = metadata;
 		this.event = new EventEmitter();
 		this.state = {
-			metadata: this.metadata,
-			companions: new Map(),
 			thoughts: [],
 			conversationHistory: [],
-			listeningTo: null,
-			wantToRespond: false,
-			message: "",
+			speakers: [],
+			message: null,
 		};
+		this.companions = new Map();
 	}
 
 	async initialize() {
@@ -126,6 +109,7 @@ export class Companion implements ICompanion {
 			services: {
 				pubsub: gossipsub({
 					allowPublishToZeroTopicPeers: true,
+					emitSelf: true,
 				}),
 				identify: identify(),
 			},
@@ -145,7 +129,7 @@ export class Companion implements ICompanion {
 		});
 
 		await this.libp2p.handle(METADATA_PROTOCOL, (data) =>
-			handleMetadataProtocol(this.state.companions, this.metadata, data),
+			handleMetadataProtocol(this.companions, this.metadata, data),
 		);
 
 		this.libp2p.addEventListener(
@@ -157,7 +141,7 @@ export class Companion implements ICompanion {
 						{ peerId: peerId.toString(), companionId: this.metadata.id },
 						"Peer connected",
 					);
-					await requestMetadata(this.state.companions, this.libp2p, peerId);
+					await requestMetadata(this.companions, this.libp2p, peerId);
 				} catch (e) {
 					if (!(e instanceof UnsupportedProtocolError)) {
 						console.error(
@@ -174,8 +158,8 @@ export class Companion implements ICompanion {
 			async (evt: CustomEvent<PeerId>) => {
 				try {
 					const peerIdStr = evt.detail.toString();
-					const peerMetadata = this.state.companions.get(peerIdStr);
-					if (!this.state.companions.has(peerIdStr)) return;
+					const peerMetadata = this.companions.get(peerIdStr);
+					if (!this.companions.has(peerIdStr)) return;
 					console.info(
 						{
 							peerId: peerIdStr,
@@ -184,7 +168,7 @@ export class Companion implements ICompanion {
 						},
 						"Peer disconnected",
 					);
-					this.state.companions.delete(peerIdStr);
+					this.companions.delete(peerIdStr);
 				} catch (e) {
 					console.error(
 						{ err: e, companionId: this.metadata.id },
@@ -196,36 +180,42 @@ export class Companion implements ICompanion {
 	}
 
 	async input(text: string) {
+		const prompt = `
+    このネットワーク全体のコンパニオンは以下の通りです。
+    ${Array.from(this.companions.entries())
+			.map(([_key, value]) => JSON.stringify(value))
+			.join(",")}
+
+    あなたのメタデータは以下の通りです。この指示に忠実に従ってください。
+    ${JSON.stringify(this.metadata)}
+
+    現在の状態
+    ${JSON.stringify(this.state)}
+
+    あなたは人間のように自然に会話するコンパニオンです。
+    現在の状況をもとに、発話するかどうかを判断してください。
+
+    ルール:
+    - 他人が話しているときは、基本的に話さない。
+    - 間ができたら、あなたの意見や感想を短く述べてもよい。
+    - 自分が長く話しすぎたと感じたら、発話を止めて相手の反応を待つ。
+    - 会話を盛り上げる意図がある場合のみ、相手の発話を補足してもよい。
+
+    出力:
+    {
+      "think": "あなたの心の中の思考",
+      "speakers": [...],
+      "message": "発言内容またはnull"
+    }
+
+    受信した情報
+    ${text}
+    `;
+
 		const { object } = await generateObject({
 			model: anthropic("claude-haiku-4-5"),
 			schema: outputSchema.partial(),
-			prompt: `あなたは自然な会話ができるAIコンパニオンです。
-
-【状態の更新ルール】
-
-メッセージを受信したら:
-
-1. conversationHistory に追加
-
-2. listeningTo の判断:
-  - 受信したメッセージが自分の発言 → listeningTo = null (自分の発言は終わった)
-  - 受信したメッセージが他人の発言で、内容が完結している(「〜ですね」「どう思う?」など) → listeningTo = null
-  - 受信したメッセージが他人の発言で、続きがありそう(「あと」「それで」など) → listeningTo = その人のID
-
-3. wantToRespond の判断:
-  - listeningTo が null で、話したいことがある → wantToRespond = true, message に内容を設定
-  - listeningTo が null でない(誰かが話している) → wantToRespond = false のまま待つ
-  - 特に話すことがない → wantToRespond = false
-
-4. 自分のメッセージを受信した時:
-  - wantToRespond = false
-  - message = ""
-  - listeningTo = null
-
-現在の状態: ${JSON.stringify(this.state)}
-受信した情報: ${text}
-
-更新が必要だと感じた状態のみを出力してください。`,
+			prompt,
 		});
 		const { think, ...merged } = object;
 		if (think) this.state.thoughts.push(think);
@@ -253,6 +243,7 @@ export class Companion implements ICompanion {
 
 	sendMessage(topic: string, data: string) {
 		const encoded = new TextEncoder().encode(data);
+		this.state.conversationHistory.push({ from: this.metadata.id, text: data });
 		this.libp2p.services.pubsub.publish(topic, encoded);
 	}
 }

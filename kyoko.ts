@@ -18,17 +18,14 @@ await companion.initialize();
 companion.onMessage("message", async (message) => {
 	const decoded = new TextDecoder().decode(message.data);
 	const json = JSON.parse(decoded);
-	console.log(`[${companion.metadata.id}] Received message:`, json);
-	await companion.input(decoded);
+	console.log(json);
+	if (json.from !== companion.metadata.id) {
+		await companion.input(decoded);
+	}
 });
 
-const checkAndSpeak = async () => {
-	if (
-		companion.state.listeningTo === null &&
-		companion.state.wantToRespond &&
-		companion.state.message !== ""
-	) {
-		await new Promise<void>((resolve) => setTimeout(() => resolve(), 5000));
+companion.event.addListener("message", () => {
+	if (companion.state.message !== null) {
 		companion.sendMessage(
 			"message",
 			JSON.stringify({
@@ -37,6 +34,4 @@ const checkAndSpeak = async () => {
 			}),
 		);
 	}
-};
-
-companion.event.addListener("listeningTo", checkAndSpeak);
+});
