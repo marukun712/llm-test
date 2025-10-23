@@ -15,32 +15,15 @@ const companion = new Companion({
 });
 await companion.initialize();
 
-companion.onMessage("message", async (message) => {
-	const decoded = new TextDecoder().decode(message.data);
-	const json = JSON.parse(decoded);
-	console.log(json);
-	if (json.from !== companion.metadata.id) {
-		await companion.input(decoded);
-	}
-});
-
-companion.event.addListener("message", () => {
-	if (companion.state.message !== null) {
-		companion.sendMessage(
-			"message",
-			JSON.stringify({
-				from: companion.metadata.id,
-				text: companion.state.message,
-			}),
-		);
-	}
-});
-
 setTimeout(() => {
-	companion.input(
-		JSON.stringify({
+	companion.history.push({
+		jsonrpc: "2.0",
+		method: "message.send",
+		params: {
+			id: "f6205b6c-1065-47c7-bb46-1dd239a6aaa2",
 			from: "user_maril",
-			message: "こんにちは!ayaさんはなにをしていますか?",
-		}),
-	);
+			to: ["companion_kyoko", "companion_aya", "companion_natsumi"],
+			message: "みんなで話して",
+		},
+	});
 }, 1000);

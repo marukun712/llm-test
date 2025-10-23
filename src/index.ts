@@ -4,23 +4,25 @@ import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { identify } from "@libp2p/identify";
-import {
-	type IdentifyResult,
-	type Libp2p,
-	type Message,
-	type PeerId,
-	UnsupportedProtocolError,
-} from "@libp2p/interface";
+import type { Libp2p, Message } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
 import { generateObject } from "ai";
 import { createLibp2p } from "libp2p";
+import { LoroDoc, type LoroList, type LoroMap } from "loro-crdt";
 import z from "zod";
-import {
-	handleMetadataProtocol,
-	METADATA_PROTOCOL,
-	requestMetadata,
-} from "./libp2p/metadata.ts";
+import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
+
+const debounce = <T extends (...args: unknown[]) => unknown>(
+	callback: T,
+	delay = 250,
+): ((...args: Parameters<T>) => void) => {
+	let timeoutId: NodeJS.Timeout;
+	return (...args) => {
+		clearTimeout(timeoutId);
+		timeoutId = setTimeout(() => callback(...args), delay);
+	};
+};
 
 export const MetadataSchema = z
 	.object({
@@ -33,70 +35,35 @@ export const MetadataSchema = z
 	.strict();
 export type Metadata = z.infer<typeof MetadataSchema>;
 
-const stateSchema = z.object({
-	thoughts: z.array(z.string()).describe("内的思考のログ"),
-	conversationHistory: z
-		.array(
-			z.object({
-				from: z.string(),
-				text: z.string(),
-			}),
-		)
-		.describe("最近の会話履歴"),
-	speakers: z.array(z.string()).describe("現在話しているコンパニオンのID配列"),
-	message: z
-		.string()
-		.nullable()
-		.describe(
-			"話者が誰もいない場合、発言したい内容。speakersに値が入っている場合はnullを入れる。",
-		),
-});
-export type State = z.infer<typeof stateSchema>;
-
-const outputSchema = z.object({
-	think: z.string().describe("内的思考のログ"),
-	speakers: z.array(z.string()).describe("現在話しているコンパニオンのID配列"),
-	message: z
-		.string()
-		.nullable()
-		.describe(
-			"話者が誰もいない場合、発言したい内容。speakersに値が入っている場合はnullを入れる。",
-		),
-});
-
 export type Services = {
 	pubsub: ReturnType<ReturnType<typeof gossipsub>>;
 	identify: ReturnType<ReturnType<typeof identify>>;
 };
 
-export interface ICompanion {
-	libp2p: Libp2p<Services>;
+export class Companion {
+	doc: LoroDoc;
 	metadata: Metadata;
 	event: EventEmitter;
-	state: State;
-	companions: Map<string, Metadata>;
-	input: (text: string) => Promise<void>;
-	onMessage: (topic: string, handler: (evt: Message) => void) => void;
-	initialize: (metadata: Metadata) => Promise<void>;
-}
-
-export class Companion implements ICompanion {
 	libp2p!: Libp2p<Services>;
-	metadata!: Metadata;
-	event: EventEmitter;
-	state: State;
-	companions: Map<string, Metadata>;
+
+	companions: LoroMap;
+	history: LoroList;
+	states: LoroMap;
 
 	constructor(metadata: Metadata) {
+		this.doc = new LoroDoc();
 		this.metadata = metadata;
 		this.event = new EventEmitter();
-		this.state = {
-			thoughts: [],
-			conversationHistory: [],
-			speakers: [],
-			message: null,
-		};
-		this.companions = new Map();
+
+		this.companions = this.doc.getMap("companions");
+		this.history = this.doc.getList("history");
+		this.states = this.doc.getMap("states");
+
+		this.companions.set(this.metadata.id, this.metadata);
+
+		this.history.subscribe(() => {
+			debounce(this.refresh);
+		});
 	}
 
 	async initialize() {
@@ -109,7 +76,6 @@ export class Companion implements ICompanion {
 			services: {
 				pubsub: gossipsub({
 					allowPublishToZeroTopicPeers: true,
-					emitSelf: true,
 				}),
 				identify: identify(),
 			},
@@ -128,122 +94,62 @@ export class Companion implements ICompanion {
 			});
 		});
 
-		await this.libp2p.handle(METADATA_PROTOCOL, (data) =>
-			handleMetadataProtocol(this.companions, this.metadata, data),
-		);
+		this.libp2p.services.pubsub.subscribe("crdt-sync");
 
-		this.libp2p.addEventListener(
-			"peer:identify",
-			async (evt: CustomEvent<IdentifyResult>) => {
-				try {
-					const peerId = evt.detail.peerId;
-					console.info(
-						{ peerId: peerId.toString(), companionId: this.metadata.id },
-						"Peer connected",
-					);
-					await requestMetadata(this.companions, this.libp2p, peerId);
-				} catch (e) {
-					if (!(e instanceof UnsupportedProtocolError)) {
-						console.error(
-							{ err: e, companionId: this.metadata.id },
-							"Error during peer connection",
-						);
-					}
+		this.libp2p.services.pubsub.addEventListener(
+			"message",
+			(evt: CustomEvent<Message>) => {
+				const topic = evt.detail.topic;
+				if (topic === "crdt-sync") {
+					handleCRDTSync(this.doc, evt);
 				}
 			},
 		);
 
-		this.libp2p.addEventListener(
-			"peer:disconnect",
-			async (evt: CustomEvent<PeerId>) => {
-				try {
-					const peerIdStr = evt.detail.toString();
-					const peerMetadata = this.companions.get(peerIdStr);
-					if (!this.companions.has(peerIdStr)) return;
-					console.info(
-						{
-							peerId: peerIdStr,
-							metadata: peerMetadata,
-							companionId: this.metadata.id,
-						},
-						"Peer disconnected",
-					);
-					this.companions.delete(peerIdStr);
-				} catch (e) {
-					console.error(
-						{ err: e, companionId: this.metadata.id },
-						"Error during peer disconnection",
-					);
-				}
-			},
+		// CRDT同期の設定
+		setupCRDTSync(this.doc, (topic, data) =>
+			this.libp2p.services.pubsub.publish(topic, data),
 		);
 	}
 
-	async input(text: string) {
+	async refresh() {
 		const prompt = `
-    このネットワーク全体のコンパニオンは以下の通りです。
-    ${Array.from(this.companions.entries())
-			.map(([_key, value]) => JSON.stringify(value))
-			.join(",")}
+    Here are the last 5 messages:
+    ${this.history
+			.toArray()
+			.slice(-5)
+			.map((m) => JSON.stringify(m, null, 2))
+			.join("\n")}
 
-    あなたのメタデータは以下の通りです。この指示に忠実に従ってください。
-    ${JSON.stringify(this.metadata)}
+    Predict the next utterance status of the speakers in this conversation history.
+    You must follow this JSON format.
 
-    現在の状態
-    ${JSON.stringify(this.state)}
-
-    あなたは人間のように自然に会話するコンパニオンです。
-    現在の状況をもとに、発話するかどうかを判断してください。
-
-    ルール:
-    - 他人が話しているときは、基本的に話さない。
-    - 間ができたら、あなたの意見や感想を短く述べてもよい。
-    - 自分が長く話しすぎたと感じたら、発話を止めて相手の反応を待つ。
-    - 会話を盛り上げる意図がある場合のみ、相手の発話を補足してもよい。
-
-    出力:
     {
-      "think": "あなたの心の中の思考",
-      "speakers": [...],
-      "message": "発言内容またはnull"
+      "id (companion id)": {
+        "state": "speak | listen",
+        "importance": "number 0~10", // Importance of the statement
+        "selected": "boolean" // Whether the speakers correspond as an adjacent pair in the last conversation
+      }
+      ...
     }
-
-    受信した情報
-    ${text}
     `;
 
 		const { object } = await generateObject({
 			model: anthropic("claude-haiku-4-5"),
-			schema: outputSchema.partial(),
 			prompt,
+			schema: z.object({
+				states: z.record(
+					z.string(),
+					z.object({
+						state: z.enum(["speak", "listen"]),
+						importance: z.number().min(0).max(10),
+						selected: z.boolean(),
+					}),
+				),
+			}),
 		});
-		const { think, ...merged } = object;
-		if (think) this.state.thoughts.push(think);
-		Object.assign(this.state, merged);
-		const keys = Object.keys(object);
-		for (const key of keys) {
-			this.event.emit(key);
-		}
-	}
 
-	onMessage(topic: string, handler: (evt: Message) => void) {
-		const pubsub = this.libp2p.services.pubsub;
-
-		if (!pubsub.getTopics().includes(topic)) {
-			pubsub.subscribe(topic);
-		}
-
-		pubsub.addEventListener("message", (evt) => {
-			const msgTopic = evt.detail.topic;
-			if (msgTopic === topic) {
-				handler(evt.detail);
-			}
-		});
-	}
-
-	sendMessage(topic: string, data: string) {
-		const encoded = new TextEncoder().encode(data);
-		this.state.conversationHistory.push({ from: this.metadata.id, text: data });
-		this.libp2p.services.pubsub.publish(topic, encoded);
+		console.log(object);
+		this.states.set("latest", object);
 	}
 }

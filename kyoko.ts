@@ -14,24 +14,3 @@ const companion = new Companion({
 		"こんにちは！私はkyokoです。今日はどんなお話をしましょうか？一緒に楽しいことを見つけましょうね♪",
 });
 await companion.initialize();
-
-companion.onMessage("message", async (message) => {
-	const decoded = new TextDecoder().decode(message.data);
-	const json = JSON.parse(decoded);
-	console.log(json);
-	if (json.from !== companion.metadata.id) {
-		await companion.input(decoded);
-	}
-});
-
-companion.event.addListener("message", () => {
-	if (companion.state.message !== null) {
-		companion.sendMessage(
-			"message",
-			JSON.stringify({
-				from: companion.metadata.id,
-				text: companion.state.message,
-			}),
-		);
-	}
-});
