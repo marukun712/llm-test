@@ -12,14 +12,14 @@ import type {
 } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
-import { generateObject, generateText, tool } from "ai";
+import { generateObject, generateText, Output, tool } from "ai";
 import { createLibp2p } from "libp2p";
 import { LoroDoc, type LoroList, type LoroMap } from "loro-crdt";
 import z from "zod";
 import { handleMetadataProtocol, METADATA_PROTOCOL } from "./libp2p/metadata";
 import { onPeerConnect, onPeerDisconnect } from "./libp2p/peer";
 import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
-import { type Metadata, StateSchema } from "./schema";
+import { GenerateSchema, type Metadata, StateSchema } from "./schema";
 import { decideNextSpeaker } from "./turnTaking";
 
 export type Services = {
@@ -143,23 +143,27 @@ export class Companion {
 	async generate() {
 		const prompt = `
     あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
+    あなたはいままでにこのような思考をしました。
+    ${JSON.stringify(this.thoughts)}
     このネットワークでの会話状況は以下の通りです。
     ${JSON.stringify(this.history.toArray().slice(-5))}
     ${JSON.stringify(this.states.toJSON())}
     この会話状況をもとに、キャラクターとして、続きの発言を生成してください。
-    出力する文章は、必ずキャラクターとして発言する内容のみにしてください。ツールやあなたの内部思考などの話はしないこと。
     `;
 
-		const { text } = await generateText({
+		const { experimental_output: object } = await generateText({
 			model: anthropic("claude-haiku-4-5"),
 			prompt,
+			experimental_output: Output.object({
+				schema: GenerateSchema,
+			}),
 			tools: { knowledge: createCompanionNetworkTool(this) },
 		});
 
-		if (text !== "") {
+		if (object.message) {
 			this.history.push({
 				from: this.metadata.id,
-				message: text,
+				message: object.message,
 			});
 			this.doc.commit();
 
@@ -187,6 +191,8 @@ export class Companion {
 				}
 			}, 5000);
 		}
+
+		this.thoughts.push(object.thought);
 	}
 
 	async refresh() {
