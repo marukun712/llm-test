@@ -14,16 +14,3 @@ const companion = new Companion({
 		"『分散システムって、みんなで支え合って動いてる感じが好きなんだ。…ちょっと可愛いと思わない？』",
 });
 await companion.initialize();
-
-setTimeout(() => {
-	companion.history.push({
-		jsonrpc: "2.0",
-		method: "message.send",
-		params: {
-			id: "f6205b6c-1065-47c7-bb46-1dd239a6aaa2",
-			from: "user_maril",
-			to: ["companion_kyoko", "companion_aya", "companion_natsumi"],
-			message: "みんなで話して",
-		},
-	});
-}, 1000);
