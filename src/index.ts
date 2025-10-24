@@ -209,6 +209,7 @@ export class Companion {
       "state": "speak | listen",
       "importance": "number 0~10",
       "selected": "boolean"
+      "closing": "none | pre-closing | closing | terminal"
     }
     `;
 

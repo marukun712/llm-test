@@ -15,6 +15,11 @@ export const StateSchema = z.object({
 		.describe(
 			"Whether you were selected as an adjacent pair by the speaker in the last utterance in the conversation history",
 		),
+	closing: z
+		.enum(["none", "pre-closing", "closing", "terminal"])
+		.describe(
+			"Please rate how you would like this conversation to end, using the following four-step scale. none: The conversation continues as is. pre-closing: Setting the stage for the end of the conversation. closing: Closing remarks, etc. terminal: Terminal adjacent pair (e.g., Goodbye!)",
+		),
 });
 
 export type State = z.infer<typeof StateSchema>;
