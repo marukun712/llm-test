@@ -12,24 +12,15 @@ import type {
 } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
-import { generateObject, generateText, Output, tool } from "ai";
+import { generateObject, generateText, tool } from "ai";
 import { createLibp2p } from "libp2p";
 import { LoroDoc, type LoroList, type LoroMap } from "loro-crdt";
 import z from "zod";
 import { handleMetadataProtocol, METADATA_PROTOCOL } from "./libp2p/metadata";
 import { onPeerConnect, onPeerDisconnect } from "./libp2p/peer";
 import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
-
-export const MetadataSchema = z
-	.object({
-		id: z.string(),
-		name: z.string(),
-		personality: z.string(),
-		story: z.string(),
-		sample: z.string(),
-	})
-	.strict();
-export type Metadata = z.infer<typeof MetadataSchema>;
+import { type Metadata, StateSchema } from "./schema";
+import { decideNextSpeaker } from "./turnTaking";
 
 export type Services = {
 	pubsub: ReturnType<ReturnType<typeof gossipsub>>;
@@ -83,6 +74,7 @@ export class Companion {
 			services: {
 				pubsub: gossipsub({
 					allowPublishToZeroTopicPeers: true,
+					emitSelf: true,
 				}),
 				identify: identify(),
 			},
@@ -102,13 +94,24 @@ export class Companion {
 		});
 
 		this.libp2p.services.pubsub.subscribe("crdt-sync");
+		this.libp2p.services.pubsub.subscribe("next");
 
 		this.libp2p.services.pubsub.addEventListener(
 			"message",
 			(evt: CustomEvent<Message>) => {
 				const topic = evt.detail.topic;
-				if (topic === "crdt-sync") {
-					handleCRDTSync(this.doc, evt);
+				switch (topic) {
+					case "crdt-sync": {
+						handleCRDTSync(this.doc, evt);
+						break;
+					}
+					case "next": {
+						const decoded = new TextDecoder().decode(evt.detail.data);
+						if (decoded === this.metadata.id) {
+							this.generate();
+						}
+						break;
+					}
 				}
 			},
 		);
@@ -135,102 +138,78 @@ export class Companion {
 		);
 
 		this.companions.set(this.metadata.id, this.metadata);
-		this.doc.commit();
-		this.loop();
 	}
 
-	async loop() {
+	async generate() {
 		const prompt = `
     あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
-    あなたはいままでにこのような思考をしました。
-    ${JSON.stringify(this.thoughts)}
     このネットワークでの会話状況は以下の通りです。
-    ${this.history
-			.toArray()
-			.slice(-5)
-			.map((m) => JSON.stringify(m, null, 2))
-			.join("\n")}    
+    ${JSON.stringify(this.history.toArray().slice(-5))}
     ${JSON.stringify(this.states.toJSON())}
-    この会話状況をもとに、以下のルールに従って発言してください。
-    - 同一ネットワークでは同時に一人までしか発言できません。
-    - 誰かが発言している場合は、短い相槌のみ発言可能です。
+    この会話状況をもとに、キャラクターとして、続きの発言を生成してください。
+    出力する文章は、必ずキャラクターとして発言する内容のみにしてください。ツールやあなたの内部思考などの話はしないこと。
     `;
 
-		console.log(prompt);
-
-		const { experimental_output: object } = await generateText({
+		const { text } = await generateText({
 			model: anthropic("claude-haiku-4-5"),
 			prompt,
-			experimental_output: Output.object({
-				schema: z.object({
-					thought: z.string().describe("あなたの思考ログ"),
-					message: z
-						.string()
-						.describe(
-							"発言する場合は与えられたキャラクターとして発言するメッセージ。しない場合はnull。",
-						)
-						.nullable(),
-				}),
-			}),
 			tools: { knowledge: createCompanionNetworkTool(this) },
 		});
 
-		console.log(object);
-
-		if (object.message) {
+		if (text !== "") {
 			this.history.push({
 				from: this.metadata.id,
-				message: object.message,
+				message: text,
 			});
 			this.doc.commit();
-		}
 
-		this.thoughts.push(object.thought);
+			console.log(this.history.toArray());
+
+			setTimeout(() => {
+				const states = this.states
+					.entries()
+					.map(([_key, value]) => {
+						const parsed = StateSchema.safeParse(value);
+						if (!parsed.success) {
+							return null;
+						} else {
+							return parsed.data;
+						}
+					})
+					.filter((state) => state !== null);
+
+				const speaker = decideNextSpeaker(states);
+				console.log(speaker?.id, states);
+
+				if (speaker) {
+					const payload = new TextEncoder().encode(speaker.id);
+					this.libp2p.services.pubsub.publish("next", payload);
+				}
+			}, 5000);
+		}
 	}
 
 	async refresh() {
 		const prompt = `
     Here are the last 5 messages:
-    ${this.history
-			.toArray()
-			.slice(-5)
-			.map((m) => JSON.stringify(m, null, 2))
-			.join("\n")}
+    ${JSON.stringify(this.history.toArray().slice(-5))}
     
     Predict the next utterance status of the speakers in this conversation history.
     You are ${this.metadata.id}
     You must follow this JSON format.
 
-    [
-      {
-        "state": "speak | listen",
-        "importance": "number 0~10",
-        "selected": "boolean"
-      }
-    ]
+    {
+      "id": "companion id",
+      "state": "speak | listen",
+      "importance": "number 0~10",
+      "selected": "boolean"
+    }
     `;
 
 		const { object } = await generateObject({
 			model: anthropic("claude-haiku-4-5"),
 			prompt,
-			schema: z.object({
-				id: z.string(),
-				state: z
-					.enum(["speak", "listen"])
-					.describe("Whether you are the next speaker or listener"),
-				importance: z
-					.number()
-					.min(0)
-					.max(10)
-					.describe(
-						"If you speak, its importance score. If you don't speak, 0.",
-					),
-				selected: z
-					.boolean()
-					.describe(
-						"Whether you were selected as an adjacent pair by the speaker in the last utterance in the conversation history",
-					),
-			}),
+			schema: StateSchema,
 		});
 
 		this.states.set(this.metadata.id, object);

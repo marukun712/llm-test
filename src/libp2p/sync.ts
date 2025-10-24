@@ -9,7 +9,6 @@ export const handleCRDTSync = async (
 	try {
 		const data = message.detail.data;
 		if (data && data.length > 0) {
-			console.log("import");
 			doc.import(data);
 		}
 	} catch (e) {
@@ -28,7 +27,6 @@ export const setupCRDTSync = (
 			if (event.by === "local") {
 				// 最新の更新をエクスポート
 				const updates = doc.export({ mode: "update" });
-				console.log("export");
 				publish("crdt-sync", updates);
 			}
 		} catch (e) {

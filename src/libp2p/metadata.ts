@@ -1,5 +1,5 @@
 import type { Connection, Libp2p, PeerId, Stream } from "@libp2p/interface";
-import { type Metadata, MetadataSchema } from "..";
+import { type Metadata, MetadataSchema } from "../schema";
 
 export const METADATA_PROTOCOL = "/aikyo/metadata/1.0.0";
 

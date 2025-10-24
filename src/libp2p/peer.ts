@@ -4,7 +4,7 @@ import {
 	type PeerId,
 	UnsupportedProtocolError,
 } from "@libp2p/interface";
-import type { Metadata } from "../index.js";
+import type { Metadata } from "../schema";
 import { requestMetadata } from "./metadata.js";
 
 export const onPeerConnect = async (

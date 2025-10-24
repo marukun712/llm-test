@@ -14,3 +14,11 @@ const companion = new Companion({
 		"『分散システムって、みんなで支え合って動いてる感じが好きなんだ。…ちょっと可愛いと思わない？』",
 });
 await companion.initialize();
+
+setTimeout(() => {
+	companion.history.push({
+		from: "user_maril",
+		message: "きょうこちゃんとなつみちゃんに話しかけてみて",
+	});
+	companion.generate();
+}, 5000);
