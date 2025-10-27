@@ -22,9 +22,6 @@ export class TransactionManager {
 			previousHash,
 		};
 		this.transactions.push(txWithHash);
-		console.log(
-			`[${transaction.companionId}]: ${transaction.type} ${transaction.score}`,
-		);
 	}
 
 	getLatestHash(): string {
@@ -45,6 +42,7 @@ export class TransactionManager {
 	}
 
 	calculateRemaining(): number {
+		console.log(this.transactions);
 		let remaining = 0;
 		for (const tx of this.transactions) {
 			if (tx.type === "RELEASE") {
@@ -53,7 +51,6 @@ export class TransactionManager {
 				remaining = Math.max(0, remaining - tx.score);
 			}
 		}
-		console.log(`計算結果 残量: ${Math.round(remaining * 100) / 100}`);
 		return Math.round(remaining * 100) / 100;
 	}
 }

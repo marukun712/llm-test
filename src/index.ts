@@ -12,7 +12,7 @@ import type {
 } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
-import { generateObject, generateText } from "ai";
+import { generateObject } from "ai";
 import { createLibp2p } from "libp2p";
 import { LoroDoc, type LoroList } from "loro-crdt";
 import z from "zod";
@@ -134,20 +134,8 @@ export class Companion {
 		this.companions.set(this.metadata.id, this.metadata);
 	}
 
-	getRandomInt(min: number, max: number) {
-		const minCeiled = Math.ceil(min);
-		const maxFloored = Math.floor(max);
-		return Math.floor(Math.random() * (maxFloored - minCeiled) + minCeiled); // 上限は除き、下限は含む
-	}
-
 	getRemaining() {
 		return this.transactionManager.calculateRemaining();
-	}
-
-	getMaxTokens(remaining: number): number {
-		const minTokens = 50;
-		const maxTokens = 200;
-		return Math.round(minTokens + (maxTokens - minTokens) * remaining);
 	}
 
 	consume(score: number) {
@@ -170,48 +158,36 @@ export class Companion {
 		const remaining = this.getRemaining();
 		if (remaining <= 0) return;
 
-		const scorePrompt = `
+		const prompt = `
+    あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
+    このネットワークには以下のコンパニオンがいます。
+    ${JSON.stringify(this.companions.values())}
     このネットワークでの会話状況は以下の通りです。
     ${JSON.stringify(this.history.toArray().slice(-5))}
-    リソースは最大1、最小0です。
-    現在の残りリソースは ${remaining} です。
-    発言の長さに応じて消費量を決めてください。
-    短い相槌は0.1〜0.2、通常は0.3〜0.5、長い発言は0.6〜0.8です。
-    残りリソースを超えないようにしてください。
+
+    リソースは最大1、最小0です。現在の残りリソースは ${remaining} です。
+
+    発言のタイプに応じて消費量を決めて、与えられたメタデータのキャラクターとしてのメッセージを生成してください。
+    - 短い相槌(うん、はい、など):0.2
+    - 通常の発言(普通の返答):0.8
+    - 長い説明的な発言: 1.0
+
+    重要:ただし、絶対に残りリソースを超えないようにしてください。
     `;
 
 		const { object } = await generateObject({
 			model: anthropic("claude-3-5-haiku-latest"),
-			prompt: scorePrompt,
-			schema: z.object({ score: z.number().min(0).max(remaining) }),
+			prompt: prompt,
+			schema: z.object({
+				message: z.string(),
+				score: z.number().min(0).max(remaining),
+			}),
 		});
 
 		this.consume(object.score);
 
-		await new Promise<void>((r) =>
-			setTimeout(r, this.getRandomInt(1000, 8000) / (remaining + 0.1)),
-		);
-
-		const updatedRemaining = this.getRemaining();
-		if (updatedRemaining <= 0) return;
-
-		const messagePrompt = `
-    あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
-    このネットワークでの会話状況は以下の通りです。
-    ${JSON.stringify(this.history.toArray().slice(-5))}
-    先ほど ${object.score} を消費して発言することにしました。
-    この会話の続きを ${this.getMaxTokens(object.score)} トークン以内で生成してください。
-    重要:出力は発言のみとし、かならずあなたに与えられたメタデータのキャラクターとしての発言を出力してください。
-    `;
-
-		const { text } = await generateText({
-			model: anthropic("claude-3-5-haiku-latest"),
-			prompt: messagePrompt,
-			maxOutputTokens: this.getMaxTokens(object.score),
-		});
-
-		console.log(`[${this.metadata.name}]`, text);
-		this.history.push({ from: this.metadata.id, message: text });
+		console.log(`[${this.metadata.name}]`, object.message);
+		this.history.push({ from: this.metadata.id, message: object.message });
 		this.doc.commit();
 	}
 }

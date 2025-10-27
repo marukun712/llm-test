@@ -24,9 +24,6 @@ export const handleTransaction = async (
 			return;
 		}
 
-		console.log(
-			`[${companionId}] 受信: ${parsed.data.type} ${parsed.data.score} by ${parsed.data.companionId}`,
-		);
 		manager.addTransaction(parsed.data);
 	} catch (e) {
 		console.error(`[${companionId}] Error:`, e);
