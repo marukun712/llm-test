@@ -127,10 +127,17 @@ export class Firehose {
 			} else {
 				console.warn("Transaction merge failed, may need chain sync");
 				console.log(this.chain.getAllTransactions());
+				this.syncChain();
 			}
 		} catch (error) {
 			console.error("Error handling transaction message:", error);
 		}
+	}
+
+	private async syncChain() {
+		await this.libp2p.getPeers().forEach(async (key) => {
+			await requestChainSync(this.chain, this.libp2p, key);
+		});
 	}
 
 	broadcastToClients(data: unknown) {

@@ -30,6 +30,7 @@
 		"@libp2p/tcp": "10.1.19",
 		"@noble/curves": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
+		"@openrouter/ai-sdk-provider": "^1.2.0",
 		"@types/ws": "^8.18.1",
 		"ai": "beta",
 		"dotenv": "^17.2.3",

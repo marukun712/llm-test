@@ -1,4 +1,3 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
@@ -11,7 +10,7 @@ import type {
 } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
-import { ToolLoopAgent } from "ai";
+import { type LanguageModel, ToolLoopAgent } from "ai";
 import { createLibp2p } from "libp2p";
 import { Chain } from "../chain/chain";
 import { mergeTransaction } from "../chain/consensus";
@@ -36,6 +35,7 @@ export type Services = {
 export class Companion {
 	metadata: Metadata;
 	companions: Map<string, Metadata>;
+	model: LanguageModel;
 	chain: Chain;
 
 	libp2p!: Libp2p<Services>;
@@ -43,9 +43,10 @@ export class Companion {
 
 	private isGenerating: boolean = false;
 
-	constructor(metadata: Metadata) {
+	constructor(metadata: Metadata, model: LanguageModel) {
 		this.metadata = metadata;
 		this.companions = new Map();
+		this.model = model;
 		this.chain = new Chain();
 	}
 
@@ -119,7 +120,7 @@ export class Companion {
 		const instructions = createInstructions(this.metadata, this.companions);
 
 		this.agent = new ToolLoopAgent({
-			model: anthropic("claude-3-5-haiku-latest"),
+			model: this.model,
 			instructions,
 			tools: this.createLocalTools(),
 		});
@@ -163,9 +164,16 @@ export class Companion {
 			} else {
 				console.warn("Transaction merge failed, may need chain sync");
 				console.log(this.chain.getAllTransactions());
+				this.syncChain();
 			}
 		} catch (error) {
 			console.error("Error handling transaction message:", error);
 		}
+	}
+
+	private async syncChain() {
+		await this.libp2p.getPeers().forEach(async (key) => {
+			await requestChainSync(this.chain, this.libp2p, key);
+		});
 	}
 }
