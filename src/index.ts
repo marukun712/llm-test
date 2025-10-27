@@ -1,5 +1,5 @@
-import { EventEmitter } from "node:events";
 import { anthropic } from "@ai-sdk/anthropic";
+import { experimental_createMCPClient } from "@ai-sdk/mcp";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
@@ -12,17 +12,11 @@ import type {
 } from "@libp2p/interface";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
-import { generateObject } from "ai";
+import { ToolLoopAgent } from "ai";
 import { createLibp2p } from "libp2p";
-import { LoroDoc, type LoroList } from "loro-crdt";
-import z from "zod";
 import { handleMetadataProtocol, METADATA_PROTOCOL } from "./libp2p/metadata";
 import { onPeerConnect, onPeerDisconnect } from "./libp2p/peer";
-import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
-import { handleTransaction } from "./libp2p/transaction";
 import type { Metadata } from "./schema";
-import { ResourceManager } from "./turnTaking/resourceManager";
-import { TransactionManager } from "./turnTaking/transactionManager";
 
 export type Services = {
 	pubsub: ReturnType<ReturnType<typeof gossipsub>>;
@@ -30,30 +24,15 @@ export type Services = {
 };
 
 export class Companion {
-	doc: LoroDoc;
 	metadata: Metadata;
-	event: EventEmitter;
-	libp2p!: Libp2p<Services>;
-	thoughts: string[];
 	companions: Map<string, Metadata>;
-	resourceManager!: ResourceManager;
-	transactionManager: TransactionManager;
 
-	history: LoroList;
+	libp2p!: Libp2p<Services>;
+	agent!: ToolLoopAgent;
 
 	constructor(metadata: Metadata) {
-		this.doc = new LoroDoc();
 		this.metadata = metadata;
-		this.event = new EventEmitter();
-		this.thoughts = [];
 		this.companions = new Map();
-		this.transactionManager = new TransactionManager();
-
-		this.history = this.doc.getList("history");
-
-		this.history.subscribe(() => {
-			this.generate();
-		});
 	}
 
 	async initialize() {
@@ -84,30 +63,18 @@ export class Companion {
 			});
 		});
 
-		this.libp2p.services.pubsub.subscribe("crdt-sync");
-		this.libp2p.services.pubsub.subscribe("transaction");
+		this.libp2p.services.pubsub.subscribe("spoke");
 
 		this.libp2p.services.pubsub.addEventListener(
 			"message",
 			(evt: CustomEvent<Message>) => {
 				const topic = evt.detail.topic;
 				switch (topic) {
-					case "crdt-sync": {
-						handleCRDTSync(this.doc, evt);
-						break;
-					}
-					case "transaction": {
-						handleTransaction(this.transactionManager, this.metadata.id, evt);
-						break;
+					case "spoke": {
+						this.generate();
 					}
 				}
 			},
-		);
-
-		this.resourceManager = new ResourceManager(
-			this.libp2p,
-			this.metadata.id,
-			this.transactionManager,
 		);
 
 		await this.libp2p.handle(METADATA_PROTOCOL, (data) =>
@@ -126,68 +93,49 @@ export class Companion {
 				onPeerDisconnect(this.companions, evt),
 		);
 
-		// CRDT同期の設定
-		setupCRDTSync(this.doc, (topic, data) =>
-			this.libp2p.services.pubsub.publish(topic, data),
-		);
-
 		this.companions.set(this.metadata.id, this.metadata);
-	}
 
-	getRemaining() {
-		return this.transactionManager.calculateRemaining();
-	}
+		const client = await experimental_createMCPClient({
+			transport: {
+				type: "http",
+				url: "http://localhost:3000/mcp",
+			},
+		});
 
-	consume(score: number) {
-		const remaining = this.getRemaining();
-		if (remaining <= 0) return;
-		this.resourceManager.consume(score);
-		console.log(
-			`[${this.metadata.name}] Resource ${score} 消費 残量: ${this.getRemaining()}`,
-		);
-	}
+		const tools = await client.tools();
 
-	release(score: number) {
-		this.resourceManager.release(score);
-		console.log(
-			`[${this.metadata.name}] Resource ${score} 解放 残量: ${this.getRemaining()}`,
-		);
-	}
-
-	async generate() {
-		const remaining = this.getRemaining();
-		if (remaining <= 0) return;
-
-		const prompt = `
+		const instructions = `
     あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
     このネットワークには以下のコンパニオンがいます。
     ${JSON.stringify(this.companions.values())}
-    このネットワークでの会話状況は以下の通りです。
-    ${JSON.stringify(this.history.toArray().slice(-5))}
-
-    リソースは最大1、最小0です。現在の残りリソースは ${remaining} です。
-
-    発言のタイプに応じて消費量を決めて、与えられたメタデータのキャラクターとしてのメッセージを生成してください。
-    - 短い相槌(うん、はい、など):0.2
-    - 通常の発言(普通の返答):0.8
-    - 長い説明的な発言: 1.0
-
-    重要:ただし、絶対に残りリソースを超えないようにしてください。
+    あなたには、ターンテイキングMCPサーバーが与えられています。
+    このサーバーは0~1のリソースと会話履歴を持っていて、発言にはリソースを消費する必要があります。
+    適切に現在のリソースと会話履歴を確認して、以下の指示に従い与えられたキャラクターとして続きのメッセージをMCPサーバーに送信してください。
+    リソース 0~0.4 短い相槌 15文字以内
+    リソース 0.5~0.8 通常の発言 100文字以内
+    リソース 0.9~0.10 長い発言 200文字以内
     `;
 
-		const { object } = await generateObject({
+		this.agent = new ToolLoopAgent({
 			model: anthropic("claude-3-5-haiku-latest"),
-			prompt: prompt,
-			schema: z.object({
-				message: z.string(),
-				score: z.number().min(0).max(remaining),
-			}),
+			instructions,
+			tools,
 		});
 
-		this.consume(object.score);
+		this.generate();
+	}
 
-		console.log(`[${this.metadata.name}]`, object.message);
-		this.history.push({ from: this.metadata.id, message: object.message });
-		this.doc.commit();
+	async generate() {
+		const { text } = await this.agent.generate({
+			prompt:
+				"適切に現在のリソースと会話履歴を確認して、以下の指示に従い与えられたキャラクターとして続きのメッセージをMCPサーバーに送信してください。",
+		});
+
+		console.log(text);
+
+		this.libp2p.services.pubsub.publish(
+			"spoke",
+			new TextEncoder().encode(this.metadata.id),
+		);
 	}
 }

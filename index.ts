@@ -14,14 +14,6 @@ const aya = new Companion({
 		"分散システムって、みんなで支え合って動いてる感じが好きなんだ...ちょっと可愛いと思わない?",
 });
 
-setTimeout(() => {
-	aya.history.push({
-		from: "user_maril",
-		message: "きょうこちゃんとなつみちゃんに話しかけてみて",
-	});
-	aya.doc.commit();
-}, 5000);
-
 const kyoko = new Companion({
 	id: "companion_kyoko",
 	name: "kyoko",
@@ -44,8 +36,12 @@ const natsumi = new Companion({
 		"「ちょっと待って!?どこからその結論出てきたの!?論理の道筋どこ行ったの!?」",
 });
 
-await Promise.all([
-	await aya.initialize(),
-	await kyoko.initialize(),
-	await natsumi.initialize(),
-]);
+async function main() {
+	await Promise.all([
+		await aya.initialize(),
+		await kyoko.initialize(),
+		await natsumi.initialize(),
+	]);
+}
+
+main().catch((e) => console.error(e));

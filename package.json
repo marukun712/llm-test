@@ -19,8 +19,8 @@
 		"typescript": "^5"
 	},
 	"dependencies": {
-		"@ai-sdk/anthropic": "^2.0.33",
-		"@anthropic-ai/sdk": "^0.67.0",
+		"@ai-sdk/anthropic": "beta",
+		"@ai-sdk/mcp": "beta",
 		"@chainsafe/libp2p-gossipsub": "^14.1.2",
 		"@chainsafe/libp2p-noise": "16.1.4",
 		"@chainsafe/libp2p-yamux": "7.0.4",
@@ -30,7 +30,7 @@
 		"@libp2p/tcp": "10.1.19",
 		"@noble/curves": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
-		"ai": "^5.0.76",
+		"ai": "beta",
 		"dotenv": "^17.2.3",
 		"libp2p": "2.9.0",
 		"loro-crdt": "^1.8.4",
