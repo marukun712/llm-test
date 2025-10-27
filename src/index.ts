@@ -35,7 +35,6 @@ export class Companion {
 	companions: Map<string, Metadata>;
 
 	history: LoroList;
-	states: LoroMap;
 
 	constructor(metadata: Metadata) {
 		this.doc = new LoroDoc();
@@ -45,8 +44,6 @@ export class Companion {
 		this.companions = new Map();
 
 		this.history = this.doc.getList("history");
-		this.states = this.doc.getMap("states");
-		this.initializeResource();
 
 		this.history.subscribe(() => {
 			this.generate();
@@ -133,14 +130,6 @@ export class Companion {
 		return parsed.data;
 	}
 
-	initializeResource() {
-		const remaining = this.getRemaining();
-		if (remaining === null) {
-			this.states.set("resource", 1);
-			this.doc.commit();
-		}
-	}
-
 	getMaxTokens(remaining: number): number {
 		const minTokens = 50;
 		const maxTokens = 200;
@@ -208,6 +197,7 @@ export class Companion {
 			prompt: messagePrompt,
 			maxOutputTokens: this.getMaxTokens(object.score),
 		});
+
 		console.log(text);
 		this.history.push({ from: this.metadata.id, message: text });
 		this.doc.commit();
