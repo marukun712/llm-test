@@ -14,12 +14,15 @@ import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
 import { generateObject, generateText } from "ai";
 import { createLibp2p } from "libp2p";
-import { LoroDoc, type LoroList, type LoroMap } from "loro-crdt";
+import { LoroDoc, type LoroList } from "loro-crdt";
 import z from "zod";
 import { handleMetadataProtocol, METADATA_PROTOCOL } from "./libp2p/metadata";
 import { onPeerConnect, onPeerDisconnect } from "./libp2p/peer";
 import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
+import { handleTransaction } from "./libp2p/transaction";
 import type { Metadata } from "./schema";
+import { MerkleTreeManager } from "./turnTaking/merkleTreeManager";
+import { ResourceManager } from "./turnTaking/resourceManager";
 
 export type Services = {
 	pubsub: ReturnType<ReturnType<typeof gossipsub>>;
@@ -33,6 +36,8 @@ export class Companion {
 	libp2p!: Libp2p<Services>;
 	thoughts: string[];
 	companions: Map<string, Metadata>;
+	resourceManager!: ResourceManager;
+	merkleTreeManager: MerkleTreeManager;
 
 	history: LoroList;
 
@@ -42,6 +47,7 @@ export class Companion {
 		this.event = new EventEmitter();
 		this.thoughts = [];
 		this.companions = new Map();
+		this.merkleTreeManager = new MerkleTreeManager();
 
 		this.history = this.doc.getList("history");
 
@@ -79,6 +85,7 @@ export class Companion {
 		});
 
 		this.libp2p.services.pubsub.subscribe("crdt-sync");
+		this.libp2p.services.pubsub.subscribe("transaction");
 
 		this.libp2p.services.pubsub.addEventListener(
 			"message",
@@ -89,8 +96,19 @@ export class Companion {
 						handleCRDTSync(this.doc, evt);
 						break;
 					}
+					case "transaction": {
+						handleTransaction(this.merkleTreeManager, evt);
+						break;
+					}
 				}
 			},
+		);
+
+		// ResourceManagerの初期化
+		this.resourceManager = new ResourceManager(
+			this.libp2p,
+			this.metadata.id,
+			this.merkleTreeManager,
 		);
 
 		await this.libp2p.handle(METADATA_PROTOCOL, (data) =>
@@ -124,10 +142,7 @@ export class Companion {
 	}
 
 	getRemaining() {
-		const remaining = this.states.get("resource");
-		const parsed = z.number().min(0).max(1).safeParse(remaining);
-		if (!parsed.success) return null;
-		return parsed.data;
+		return this.merkleTreeManager.calculateRemaining();
 	}
 
 	getMaxTokens(remaining: number): number {
@@ -138,25 +153,23 @@ export class Companion {
 
 	consume(score: number) {
 		const remaining = this.getRemaining();
-		if (remaining === null) return;
-		const newRemaining = Math.round(Math.max(0, remaining - score) * 100) / 100;
-		console.log("リソース", score, "消費 残量:", newRemaining);
-		this.states.set("resource", newRemaining);
-		this.doc.commit();
+		if (remaining <= 0) return;
+		this.resourceManager.consume(score);
+		console.log(
+			`[${this.metadata.name}] リソース ${score} 消費 残量: ${this.getRemaining()}`,
+		);
 	}
 
 	release(score: number) {
-		const remaining = this.getRemaining();
-		if (remaining === null) return;
-		const newRemaining = Math.round(Math.min(1, remaining + score) * 100) / 100;
-		console.log("リソース解放", score, "残量:", newRemaining);
-		this.states.set("resource", newRemaining);
-		this.doc.commit();
+		this.resourceManager.release(score);
+		console.log(
+			`[${this.metadata.name}] リソース ${score} 解放 残量: ${this.getRemaining()}`,
+		);
 	}
 
 	async generate() {
 		const remaining = this.getRemaining();
-		if (remaining === null || remaining <= 0) return;
+		if (remaining <= 0) return;
 
 		const scorePrompt = `
     このネットワークでの会話状況は以下の通りです。
@@ -181,7 +194,7 @@ export class Companion {
 		);
 
 		const updatedRemaining = this.getRemaining();
-		if (updatedRemaining === null || updatedRemaining <= 0) return;
+		if (updatedRemaining <= 0) return;
 
 		const messagePrompt = `
     あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
