@@ -1,7 +1,4 @@
-import {
-	McpServer,
-	ResourceTemplate,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import { z } from "zod";
@@ -11,8 +8,10 @@ const server = new McpServer({
 	version: "1.0.0",
 });
 
-let resourceLevel = 1.0;
-const hisotry: { from: string; message: string }[] = [];
+let resourceLevel = 100;
+const history: { from: string; message: string }[] = [
+	{ from: "maril", message: "みんなで話そう!" },
+];
 
 server.registerTool(
 	"consume",
@@ -20,7 +19,7 @@ server.registerTool(
 		title: "Consume Resource",
 		description: "指定量のリソースを消費します（残量未満でないと失敗）",
 		inputSchema: {
-			amount: z.number().min(0).max(1),
+			amount: z.number().min(0).max(100),
 			message: z.string(),
 			from: z.string(),
 		},
@@ -53,8 +52,8 @@ server.registerTool(
 
 		resourceLevel -= amount;
 		console.log("消費", amount, "残量", resourceLevel);
-		hisotry.push({ from, message });
-		console.log(hisotry);
+		history.push({ from, message });
+		console.log(history);
 
 		return {
 			content: [
@@ -71,41 +70,6 @@ server.registerTool(
 				success: true,
 				resource: resourceLevel,
 				message: "Resource consumed.",
-			},
-		};
-	},
-);
-
-server.registerTool(
-	"release",
-	{
-		title: "Release Resource",
-		description: "指定量のリソースを開放します(最大1まで)",
-		inputSchema: { amount: z.number().min(0).max(1) },
-		outputSchema: {
-			success: z.boolean(),
-			resource: z.number(),
-			message: z.string(),
-		},
-	},
-	async ({ amount }) => {
-		resourceLevel = Math.min(1, resourceLevel + amount);
-		console.log("解放", amount, "残量", resourceLevel);
-		return {
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify({
-						success: true,
-						resource: resourceLevel,
-						message: "Resource released.",
-					}),
-				},
-			],
-			structuredContent: {
-				success: true,
-				resource: resourceLevel,
-				message: "Resource released.",
 			},
 		};
 	},
@@ -129,38 +93,22 @@ server.registerTool(
 	},
 );
 
-server.registerResource(
-	"resource",
-	new ResourceTemplate("resource://current", { list: undefined }),
-	{
-		title: "Resource Status",
-		description: "現在のリソース残量を示すリソース",
-	},
-	async (uri) => ({
-		contents: [
-			{
-				uri: uri.href,
-				text: `Current resource level: ${resourceLevel.toFixed(3)}`,
-			},
-		],
-	}),
-);
-
-server.registerResource(
+server.registerTool(
 	"history",
-	new ResourceTemplate("resource://history", { list: undefined }),
 	{
-		title: "History",
-		description: "現在の会話履歴を返す",
+		title: "Check History",
+		description: "現在の会話履歴を返します",
+		inputSchema: {},
+		outputSchema: {
+			history: z.array(z.object({ from: z.string(), message: z.string() })),
+		},
 	},
-	async (uri) => ({
-		contents: [
-			{
-				uri: uri.href,
-				text: `${JSON.stringify(hisotry)}`,
-			},
-		],
-	}),
+	async () => {
+		return {
+			content: [{ type: "text", text: JSON.stringify({ history }) }],
+			structuredContent: { history },
+		};
+	},
 );
 
 const app = express();
@@ -179,6 +127,14 @@ app.post("/mcp", async (req, res) => {
 	await server.connect(transport);
 	await transport.handleRequest(req, res, req.body);
 });
+
+setInterval(() => {
+	if (resourceLevel < 100) {
+		const oldLevel = resourceLevel;
+		resourceLevel = Math.min(100, resourceLevel + 10);
+		console.log(`自動回復 +${resourceLevel - oldLevel} 残量 ${resourceLevel}`);
+	}
+}, 1000);
 
 const port = parseInt(process.env.PORT || "3000", 10);
 app

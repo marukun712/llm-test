@@ -30,6 +30,8 @@ export class Companion {
 	libp2p!: Libp2p<Services>;
 	agent!: ToolLoopAgent;
 
+	private isGenerating: boolean = false;
+
 	constructor(metadata: Metadata) {
 		this.metadata = metadata;
 		this.companions = new Map();
@@ -107,13 +109,65 @@ export class Companion {
 		const instructions = `
     あなたのメタデータは、${JSON.stringify(this.metadata)}です。この設定に忠実にふるまってください。
     このネットワークには以下のコンパニオンがいます。
-    ${JSON.stringify(this.companions.values())}
+    ${JSON.stringify(Array.from(this.companions.values()))}
+
+    ## ターンテイキングのルール
     あなたには、ターンテイキングMCPサーバーが与えられています。
-    このサーバーは0~1のリソースと会話履歴を持っていて、発言にはリソースを消費する必要があります。
-    適切に現在のリソースと会話履歴を確認して、以下の指示に従い与えられたキャラクターとして続きのメッセージをMCPサーバーに送信してください。
-    リソース 0~0.4 短い相槌 15文字以内
-    リソース 0.5~0.8 通常の発言 100文字以内
-    リソース 0.9~0.10 長い発言 200文字以内
+    このサーバーは0~100のリソースと会話履歴を持っていて、発言にはリソースを消費する必要があります。
+
+    ### 発言時の手順(厳守)
+
+    #### ステップ1: 必ず最初に会話履歴を確認
+    - 「history」リソースを読んで、これまでの会話を把握してください
+    - 誰が何を言ったか、どんな話題が出ているかをよく確認してください
+    - **これまでに出た発言と同じ内容を繰り返さないでください**
+
+    #### ステップ2: リソース状況を確認
+    - 「status」ツールで現在のリソース残量を確認してください
+
+    #### ステップ3: 発言の長さと内容を決定
+    **重要: 会話のリズムを大切にしてください。必ずしも長く話す必要はありません。**
+
+    発言の長さは状況に応じて選んでください：
+
+    **短い相槌(5~10リソース消費、10文字以内)を使うべき状況:**
+    - 他の人が長めの発言をした直後に反応する時
+    - 相手の意見に同意・共感する時
+    - 話題が盛り上がっている時の合いの手
+    - リソースが少ない時（50未満）
+    - **積極的に使ってください！会話のテンポが良くなります**
+
+    **通常の発言（25~45リソース消費、50文字以内）を使う状況:**
+    - 相手の発言に反応しつつ、自分の意見を少し加える時
+    - 話題を少し発展させたい時
+    - リソースが中程度（50~79）の時
+
+    **長めの発言（60~80リソース消費、100文字以内）を使う状況:**
+    - 新しい話題を始める時（会話履歴が0~2件の時）
+    - 複雑な考えや具体的な説明が必要な時
+    - リソースが十分（80以上）で、会話を大きく発展させたい時
+    - **注意**: 頻繁に使わず、ここぞという時だけ使う
+
+    **会話履歴による使い分け:**
+    - 会話履歴0~2件: キャラクター設定に基づいた話題を始める（長めでOK）
+    - 会話履歴3件以上: 短い相槌も積極的に活用し、テンポの良い会話を心がける
+
+    #### ステップ4: リソース消費量を決定
+    - 短い相槌: 5~10リソース消費（10文字以内）← 積極的に使う
+    - 通常の発言: 25~45リソース消費（50文字以内）
+    - 長めの発言: 60~80リソース消費（100文字以内）← 控えめに使う
+
+    #### ステップ5: 発言を実行
+    - 「consume」ツールで発言してください
+    - fromフィールド: "${this.metadata.name}"（必須・idではなくname）
+    - amount: 決定した消費量
+    - message: キャラクターに合った、会話を進展させる内容
+
+    ### 絶対に守るべきルール
+    - 会話履歴を確認せずに発言することは禁止
+    - 既に言われた内容の繰り返しは禁止
+    - 抽象的な挨拶や問いかけの繰り返しは禁止(会話が進んでいる場合)
+    - 必ず会話を前進させる内容にすること
     `;
 
 		this.agent = new ToolLoopAgent({
@@ -126,16 +180,26 @@ export class Companion {
 	}
 
 	async generate() {
-		const { text } = await this.agent.generate({
-			prompt:
-				"適切に現在のリソースと会話履歴を確認して、以下の指示に従い与えられたキャラクターとして続きのメッセージをMCPサーバーに送信してください。",
-		});
+		if (this.isGenerating) {
+			return;
+		}
 
-		console.log(text);
+		this.isGenerating = true;
 
-		this.libp2p.services.pubsub.publish(
-			"spoke",
-			new TextEncoder().encode(this.metadata.id),
-		);
+		try {
+			const { text } = await this.agent.generate({
+				prompt:
+					"現在のリソース状況と会話履歴を確認して、instructionsに従って適切に発言してください。",
+			});
+
+			console.log(text);
+
+			this.libp2p.services.pubsub.publish(
+				"spoke",
+				new TextEncoder().encode(this.metadata.id),
+			);
+		} finally {
+			this.isGenerating = false;
+		}
 	}
 }
