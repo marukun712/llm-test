@@ -46,7 +46,7 @@ export class Companion {
 	constructor(metadata: Metadata) {
 		this.metadata = metadata;
 		this.companions = new Map();
-		this.chain = new Chain("みんなで話そう!");
+		this.chain = new Chain();
 	}
 
 	async initialize() {
@@ -77,7 +77,6 @@ export class Companion {
 			});
 		});
 
-		this.libp2p.services.pubsub.subscribe("spoke");
 		this.libp2p.services.pubsub.subscribe(TRANSACTION_TOPIC);
 
 		this.libp2p.services.pubsub.addEventListener(
@@ -124,8 +123,6 @@ export class Companion {
 			instructions,
 			tools: this.createLocalTools(),
 		});
-
-		this.generate();
 	}
 
 	async generate() {

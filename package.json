@@ -30,10 +30,12 @@
 		"@libp2p/tcp": "10.1.19",
 		"@noble/curves": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
+		"@types/ws": "^8.18.1",
 		"ai": "beta",
 		"dotenv": "^17.2.3",
 		"libp2p": "2.9.0",
 		"loro-crdt": "^1.8.4",
+		"ws": "^8.18.3",
 		"zod": "^4.1.12"
 	}
 }

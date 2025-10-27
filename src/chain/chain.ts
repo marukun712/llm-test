@@ -11,8 +11,8 @@ const RECOVERY_TIME_MS = 5000;
 export class Chain {
 	private transactions: Transaction[] = [];
 
-	constructor(genesisMessage = "みんなで話そう!") {
-		const genesis = createTransaction("maril", genesisMessage, 0, "");
+	constructor(genesisMessage = "") {
+		const genesis = createTransaction("", genesisMessage, 0, "");
 		this.transactions.push(genesis);
 	}
 
