@@ -18,6 +18,7 @@ export class Chain {
 
 	validateChain(): boolean {
 		for (let i = 0; i < this.transactions.length; i++) {
+			//それぞれトランザクションを取得
 			const tx = this.transactions[i];
 			if (!tx) {
 				console.error(`Missing transaction at index ${i}`);
@@ -34,16 +35,19 @@ export class Chain {
 				prevTx = prev;
 			}
 
+			//トランザクションのハッシュ値をチェック
 			if (!validateTransactionHash(tx)) {
 				console.error(`Invalid hash at transaction ${i}`);
 				return false;
 			}
 
+			//一件前のハッシュと一致しているかチェック
 			if (!validateTransactionLink(tx, prevTx)) {
 				console.error(`Invalid link at transaction ${i}`);
 				return false;
 			}
 
+			//リソースが負になっていないかチェック
 			const resourceAtTime = this.calculateResourceAt(i);
 			if (resourceAtTime < 0) {
 				console.error(
@@ -55,6 +59,7 @@ export class Chain {
 		return true;
 	}
 
+	//指定されたindexまでのリソース消費をチェック
 	private calculateResourceAt(index: number): number {
 		const targetTx = this.transactions[index];
 		if (!targetTx) {
@@ -67,6 +72,7 @@ export class Chain {
 			const tx = this.transactions[i];
 			if (!tx) continue;
 			const timeDiff = targetTx.timestamp - tx.timestamp;
+			//すでにリソース回復時間に達している場合は除外
 			if (timeDiff < RECOVERY_TIME_MS) {
 				resource -= tx.amount;
 			}
@@ -75,6 +81,7 @@ export class Chain {
 		return resource;
 	}
 
+	//最新のトランザクションまでのリソース消費をチェック
 	calculateResource(): number {
 		const now = Date.now();
 		let resource = INITIAL_RESOURCE;
@@ -87,6 +94,7 @@ export class Chain {
 		return resource;
 	}
 
+	//消費したことでリソースが負にならないかチェック
 	canConsume(amount: number): boolean {
 		return this.calculateResource() >= amount;
 	}
@@ -98,6 +106,7 @@ export class Chain {
 			return false;
 		}
 
+		//チェーンの検証
 		if (!validateTransactionLink(tx, lastTx)) {
 			console.error("Invalid transaction link");
 			return false;
@@ -110,6 +119,7 @@ export class Chain {
 
 		this.transactions.push(tx);
 
+		//チェーンが不正だった場合取り消し
 		if (!this.validateChain()) {
 			this.transactions.pop();
 			console.error("Chain validation failed after adding transaction");
@@ -119,6 +129,7 @@ export class Chain {
 		return true;
 	}
 
+	//チェーンから会話履歴だけとってくる
 	getHistory(): { from: string; message: string }[] {
 		return this.transactions.map((tx) => ({
 			from: tx.from,
@@ -142,6 +153,7 @@ export class Chain {
 		return [...this.transactions];
 	}
 
+	//チェーンを置き換え
 	replaceChain(newTransactions: Transaction[]): boolean {
 		const tempChain = new Chain();
 		tempChain.transactions = [...newTransactions];

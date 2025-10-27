@@ -1,25 +1,6 @@
 import type { Chain } from "./chain";
 import type { Transaction } from "./transaction";
 
-export function selectLongestChain(chains: Chain[]): Chain | null {
-	if (chains.length === 0) {
-		return null;
-	}
-
-	let longest: Chain | undefined = chains[0];
-	if (!longest) {
-		return null;
-	}
-
-	for (const chain of chains) {
-		if (chain.getLength() > longest.getLength()) {
-			longest = chain;
-		}
-	}
-
-	return longest;
-}
-
 export function resolveConflict(
 	currentChain: Chain,
 	receivedTransactions: Transaction[],
@@ -27,6 +8,7 @@ export function resolveConflict(
 	const currentLength = currentChain.getLength();
 	const receivedLength = receivedTransactions.length;
 
+	//より長いチェーンで置き換え
 	if (receivedLength > currentLength) {
 		if (currentChain.replaceChain(receivedTransactions)) {
 			console.info("Chain replaced successfully");
