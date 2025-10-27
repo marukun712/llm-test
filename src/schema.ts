@@ -11,3 +11,14 @@ export const MetadataSchema = z
 	.strict();
 
 export type Metadata = z.infer<typeof MetadataSchema>;
+
+export const TransactionSchema = z.object({
+	from: z.string(),
+	message: z.string(),
+	amount: z.number(),
+	timestamp: z.number(),
+	prevHash: z.string(),
+	hash: z.string(),
+});
+
+export type Transaction = z.infer<typeof TransactionSchema>;
