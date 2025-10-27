@@ -131,8 +131,8 @@ app.post("/mcp", async (req, res) => {
 setInterval(() => {
 	if (resourceLevel < 100) {
 		const oldLevel = resourceLevel;
-		resourceLevel = Math.min(100, resourceLevel + 10);
-		console.log(`自動回復 +${resourceLevel - oldLevel} 残量 ${resourceLevel}`);
+		resourceLevel = Math.min(100, resourceLevel + 5);
+		console.log(`自動回復 ${resourceLevel - oldLevel} 残量 ${resourceLevel}`);
 	}
 }, 1000);
 
