@@ -55,6 +55,11 @@ server.registerTool(
 		history.push({ from, message });
 		console.log(history);
 
+		setTimeout(() => {
+			resourceLevel = Math.min(100, resourceLevel + amount);
+			console.log("回復", amount, "残量", resourceLevel);
+		}, 5000);
+
 		return {
 			content: [
 				{
@@ -127,14 +132,6 @@ app.post("/mcp", async (req, res) => {
 	await server.connect(transport);
 	await transport.handleRequest(req, res, req.body);
 });
-
-setInterval(() => {
-	if (resourceLevel < 100) {
-		const oldLevel = resourceLevel;
-		resourceLevel = Math.min(100, resourceLevel + 5);
-		console.log(`自動回復 ${resourceLevel - oldLevel} 残量 ${resourceLevel}`);
-	}
-}, 1000);
 
 const port = parseInt(process.env.PORT || "3000", 10);
 app
