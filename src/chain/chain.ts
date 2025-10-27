@@ -12,7 +12,7 @@ export class Chain {
 	private transactions: Transaction[] = [];
 
 	constructor(genesisMessage = "") {
-		const genesis = createTransaction("", genesisMessage, 0, "");
+		const genesis = createTransaction("", genesisMessage, 0, "", true);
 		this.transactions.push(genesis);
 	}
 

@@ -25,8 +25,9 @@ export function createTransaction(
 	message: string,
 	amount: number,
 	prevHash: string,
+	genesis?: boolean,
 ): Transaction {
-	const timestamp = Date.now();
+	const timestamp = genesis ? 0 : Date.now();
 	const hash = calculateHash(from, message, amount, timestamp, prevHash);
 
 	return {
