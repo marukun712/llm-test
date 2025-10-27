@@ -1,7 +1,7 @@
 import type { Libp2p } from "libp2p";
 import type { Services } from "..";
 import type { Transaction } from "../schema";
-import type { MerkleTreeManager } from "./merkleTreeManager";
+import type { TransactionManager } from "./transactionManager";
 
 interface ActiveConsume {
 	score: number;
@@ -13,17 +13,17 @@ export class ResourceManager {
 	libp2p: Libp2p<Services>;
 	companionId: string;
 	activeConsumes: Map<string, ActiveConsume>;
-	merkleTreeManager: MerkleTreeManager;
+	transactionManager: TransactionManager;
 
 	constructor(
 		libp2p: Libp2p<Services>,
 		companionId: string,
-		merkleTreeManager: MerkleTreeManager,
+		transactionManager: TransactionManager,
 	) {
 		this.libp2p = libp2p;
 		this.companionId = companionId;
 		this.activeConsumes = new Map();
-		this.merkleTreeManager = merkleTreeManager;
+		this.transactionManager = transactionManager;
 	}
 
 	consume(score: number): string {
@@ -34,7 +34,7 @@ export class ResourceManager {
 			companionId: this.companionId,
 		};
 
-		this.merkleTreeManager.addTransaction(transaction);
+		this.transactionManager.addTransaction(transaction);
 
 		const payload = new TextEncoder().encode(JSON.stringify(transaction));
 		this.libp2p.services.pubsub.publish("transaction", payload);
@@ -62,17 +62,9 @@ export class ResourceManager {
 			companionId: this.companionId,
 		};
 
-		this.merkleTreeManager.addTransaction(transaction);
+		this.transactionManager.addTransaction(transaction);
 
 		const payload = new TextEncoder().encode(JSON.stringify(transaction));
 		this.libp2p.services.pubsub.publish("transaction", payload);
-	}
-
-	cancelConsume(consumeId: string) {
-		const active = this.activeConsumes.get(consumeId);
-		if (active) {
-			clearTimeout(active.timeoutId);
-			this.activeConsumes.delete(consumeId);
-		}
 	}
 }

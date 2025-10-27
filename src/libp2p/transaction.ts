@@ -1,13 +1,34 @@
 import type { Message } from "@libp2p/interface";
 import { TransactionSchema } from "../schema";
-import type { MerkleTreeManager } from "../turnTaking/merkleTreeManager";
+import type { TransactionManager } from "../turnTaking/transactionManager";
 
 export const handleTransaction = async (
-	tree: MerkleTreeManager,
+	manager: TransactionManager,
+	companionId: string,
 	message: CustomEvent<Message>,
 ) => {
-	const data = new TextDecoder().decode(message.detail.data);
-	const parsed = TransactionSchema.safeParse(data);
-	if (!parsed.success) return;
-	tree.addTransaction(parsed.data);
+	try {
+		const data = new TextDecoder().decode(message.detail.data);
+		const json = JSON.parse(data);
+		const parsed = TransactionSchema.safeParse(json);
+		if (!parsed.success) {
+			console.error("[Transaction] パース失敗:", parsed.error);
+			return;
+		}
+
+		// 自分のトランザクションはスキップ
+		if (parsed.data.companionId === companionId) {
+			console.log(
+				`[${companionId}] Skip:${parsed.data.type} ${parsed.data.score}`,
+			);
+			return;
+		}
+
+		console.log(
+			`[${companionId}] 受信: ${parsed.data.type} ${parsed.data.score} by ${parsed.data.companionId}`,
+		);
+		manager.addTransaction(parsed.data);
+	} catch (e) {
+		console.error(`[${companionId}] Error:`, e);
+	}
 };

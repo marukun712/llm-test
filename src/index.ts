@@ -21,8 +21,8 @@ import { onPeerConnect, onPeerDisconnect } from "./libp2p/peer";
 import { handleCRDTSync, setupCRDTSync } from "./libp2p/sync";
 import { handleTransaction } from "./libp2p/transaction";
 import type { Metadata } from "./schema";
-import { MerkleTreeManager } from "./turnTaking/merkleTreeManager";
 import { ResourceManager } from "./turnTaking/resourceManager";
+import { TransactionManager } from "./turnTaking/transactionManager";
 
 export type Services = {
 	pubsub: ReturnType<ReturnType<typeof gossipsub>>;
@@ -37,7 +37,7 @@ export class Companion {
 	thoughts: string[];
 	companions: Map<string, Metadata>;
 	resourceManager!: ResourceManager;
-	merkleTreeManager: MerkleTreeManager;
+	transactionManager: TransactionManager;
 
 	history: LoroList;
 
@@ -47,7 +47,7 @@ export class Companion {
 		this.event = new EventEmitter();
 		this.thoughts = [];
 		this.companions = new Map();
-		this.merkleTreeManager = new MerkleTreeManager();
+		this.transactionManager = new TransactionManager();
 
 		this.history = this.doc.getList("history");
 
@@ -97,18 +97,17 @@ export class Companion {
 						break;
 					}
 					case "transaction": {
-						handleTransaction(this.merkleTreeManager, evt);
+						handleTransaction(this.transactionManager, this.metadata.id, evt);
 						break;
 					}
 				}
 			},
 		);
 
-		// ResourceManagerの初期化
 		this.resourceManager = new ResourceManager(
 			this.libp2p,
 			this.metadata.id,
-			this.merkleTreeManager,
+			this.transactionManager,
 		);
 
 		await this.libp2p.handle(METADATA_PROTOCOL, (data) =>
@@ -142,7 +141,7 @@ export class Companion {
 	}
 
 	getRemaining() {
-		return this.merkleTreeManager.calculateRemaining();
+		return this.transactionManager.calculateRemaining();
 	}
 
 	getMaxTokens(remaining: number): number {
@@ -156,14 +155,14 @@ export class Companion {
 		if (remaining <= 0) return;
 		this.resourceManager.consume(score);
 		console.log(
-			`[${this.metadata.name}] リソース ${score} 消費 残量: ${this.getRemaining()}`,
+			`[${this.metadata.name}] Resource ${score} 消費 残量: ${this.getRemaining()}`,
 		);
 	}
 
 	release(score: number) {
 		this.resourceManager.release(score);
 		console.log(
-			`[${this.metadata.name}] リソース ${score} 解放 残量: ${this.getRemaining()}`,
+			`[${this.metadata.name}] Resource ${score} 解放 残量: ${this.getRemaining()}`,
 		);
 	}
 
@@ -211,7 +210,7 @@ export class Companion {
 			maxOutputTokens: this.getMaxTokens(object.score),
 		});
 
-		console.log(text);
+		console.log(`[${this.metadata.name}]`, text);
 		this.history.push({ from: this.metadata.id, message: text });
 		this.doc.commit();
 	}

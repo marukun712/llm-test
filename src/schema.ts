@@ -17,6 +17,7 @@ export const TransactionSchema = z
 		type: z.enum(["CONSUME", "RELEASE"]),
 		score: z.number().min(0).max(1),
 		companionId: z.string(),
+		previousHash: z.string().optional(),
 	})
 	.strict();
 

@@ -41,9 +41,6 @@ importers:
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
-      '@node101/merkle-tree':
-        specifier: ^0.0.11
-        version: 0.0.11
       ai:
         specifier: ^5.0.76
         version: 5.0.80(zod@4.1.12)
@@ -261,9 +258,6 @@ packages:
   '@noble/hashes@2.0.1':
     resolution: {integrity: sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==}
     engines: {node: '>= 20.19.0'}
-
-  '@node101/merkle-tree@0.0.11':
-    resolution: {integrity: sha512-M54Ge/Uq3H/CYfwrMvkJlFNFqdGpn1eGosBf/lW66Vz65/X5VjrCn7pUQJ7jL+s26E/uUQG6GCKekSBQWx/2zQ==}
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -935,8 +929,6 @@ snapshots:
   '@noble/hashes@1.8.0': {}
 
   '@noble/hashes@2.0.1': {}
-
-  '@node101/merkle-tree@0.0.11': {}
 
   '@opentelemetry/api@1.9.0': {}
 
