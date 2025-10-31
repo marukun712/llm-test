@@ -1,13 +1,11 @@
 import crypto from "node:crypto";
 import { MerkleTree } from "merkletreejs";
 
-export class MyMerkleTree {
+export class MerkleTreeManager {
 	private tree: MerkleTree;
 
-	constructor(elements: string[]) {
-		const leaves = elements.map((el) => this.sha256(el));
-
-		this.tree = new MerkleTree(leaves, this.sha256, {
+	constructor() {
+		this.tree = new MerkleTree([], this.sha256, {
 			sortPairs: true,
 		});
 	}

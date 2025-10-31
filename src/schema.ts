@@ -17,8 +17,6 @@ export const TransactionSchema = z.object({
 	message: z.string(),
 	remaining: z.number(),
 	timestamp: z.number(),
-	prevHash: z.string(),
-	hash: z.string(),
 });
 
 export type Transaction = z.infer<typeof TransactionSchema>;
