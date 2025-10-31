@@ -1,4 +1,4 @@
-import { openrouter } from "@openrouter/ai-sdk-provider";
+import { anthropic } from "@ai-sdk/anthropic";
 import { config } from "dotenv";
 import { Companion } from "../src/index.ts";
 
@@ -15,7 +15,7 @@ const companion = new Companion(
 		sample:
 			"分散システムって、みんなで支え合って動いてる感じが好きなんだ...ちょっと可愛いと思わない?",
 	},
-	openrouter("google/gemini-2.0-flash-001"),
+	anthropic("claude-3-5-haiku-latest"),
 );
 
 async function main() {

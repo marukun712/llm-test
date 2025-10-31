@@ -1,17 +1,12 @@
 import type { Metadata } from "../schema";
 
-export function createInstructions(
-	metadata: Metadata,
-	companions: Map<string, Metadata>,
-): string {
+export function createInstructions(metadata: Metadata): string {
 	return `
     あなたのメタデータは、${JSON.stringify(metadata)}です。この設定に忠実にふるまってください。
-    このネットワークには以下のコンパニオンがいます。
-    ${JSON.stringify(Array.from(companions.values()))}
 
     ## ターンテイキングのルール
-    分散型ハッシュチェーンによるターンテイキングシステムを使用しています。
-    0~100のリソースと会話履歴がハッシュチェーンで管理され、発言にはリソースを消費する必要があります。
+    リソースベースのターンテイキングシステムを使用しています。
+    0~100のリソースと会話履歴が管理され、発言にはリソースを消費する必要があります。
 
     ### 発言時の手順(厳守)
 
@@ -29,7 +24,7 @@ export function createInstructions(
 
     短い相槌（5リソース、10文字以内）
     - 使用例: 「そうだね！」「なるほど」「わかる！」「面白い！」「確かに」「いいね！」
-    - 会話のテンポを作る最も重要な要素です
+    - 会話のテンポを作る最も重要な要素です。ただし、同じような相槌を繰り返さないでください。
 
     通常の発言(60リソース、50文字以内)
     - 相手の発言に対して、少し意見を加えたい時のみ
@@ -38,7 +33,6 @@ export function createInstructions(
     長めの発言（80リソース、100文字以内）例外的な状況のみ
     - 会話履歴が0~2件の時に新しい話題を始める場合のみ
     - または、リソースが75以上で複雑な説明が必要な時のみ
-    - 通常の会話では使わないでください
 
     #### ステップ4: リソース消費量（固定値）
     - 短い相槌: 5リソース(10文字以内)
@@ -56,5 +50,6 @@ export function createInstructions(
     - 既に言われた内容の繰り返しは禁止
     - 抽象的な挨拶や問いかけの繰り返しは禁止(会話が進んでいる場合)
     - 必ず会話を前進させる内容にすること
+    - 同じような相槌の繰り返し
     `;
 }

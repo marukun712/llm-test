@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import type WebSocket from "ws";
+import { WebSocketServer } from "ws";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -8,10 +10,25 @@ const server = new McpServer({
 	version: "1.0.0",
 });
 
+const historySchema = z.object({
+	from: z.string(),
+	message: z.string(),
+});
+type History = z.infer<typeof historySchema>;
+
 let resourceLevel = 100;
-const history: { from: string; message: string }[] = [
-	{ from: "maril", message: "みんなで話そう!" },
-];
+const history: History[] = [{ from: "maril", message: "みんなで話そう!" }];
+
+const wsClients = new Set<WebSocket>();
+
+function notify(message: History) {
+	const payload = JSON.stringify({ type: "newMessage", message });
+	wsClients.forEach((ws) => {
+		if (ws.readyState === ws.OPEN) {
+			ws.send(payload);
+		}
+	});
+}
 
 server.registerTool(
 	"consume",
@@ -53,7 +70,7 @@ server.registerTool(
 		resourceLevel -= amount;
 		console.log("消費", amount, "残量", resourceLevel);
 		history.push({ from, message });
-		console.log(history);
+		notify({ from, message });
 
 		setTimeout(() => {
 			resourceLevel = Math.min(100, resourceLevel + amount);
@@ -133,12 +150,36 @@ app.post("/mcp", async (req, res) => {
 	await transport.handleRequest(req, res, req.body);
 });
 
+app.post("/add", async (req, res) => {
+	try {
+		const data = historySchema.parse(req.body);
+		history.push({ from: data.from, message: data.message });
+		notify({ from: data.from, message: data.message });
+		res.json({
+			success: true,
+			history,
+		});
+	} catch (err) {
+		if (err instanceof z.ZodError) {
+			res.status(400).json({ success: false, errors: err.errors });
+		} else {
+			res
+				.status(500)
+				.json({ success: false, message: "Internal server error" });
+		}
+	}
+});
+
 const port = parseInt(process.env.PORT || "3000", 10);
-app
-	.listen(port, () => {
-		console.log(`Resource MCP Server running on http://localhost:${port}/mcp`);
-	})
-	.on("error", (error) => {
-		console.error("Server error:", error);
-		process.exit(1);
+const serverInstance = app.listen(port, () => {
+	console.log(`Resource MCP Server running on http://localhost:${port}/mcp`);
+});
+
+const wss = new WebSocketServer({ server: serverInstance });
+
+wss.on("connection", (ws: WebSocket) => {
+	wsClients.add(ws);
+	ws.on("close", () => {
+		wsClients.delete(ws);
 	});
+});
