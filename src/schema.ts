@@ -15,7 +15,7 @@ export type Metadata = z.infer<typeof MetadataSchema>;
 export const TransactionSchema = z.object({
 	from: z.string(),
 	message: z.string(),
-	amount: z.number(),
+	remaining: z.number(),
 	timestamp: z.number(),
 	prevHash: z.string(),
 	hash: z.string(),
